@@ -1,4 +1,4 @@
-// Make this a client sides app:
+/* Make this a client sides app: */
 "use client"
 
 import Image from "next/image";
@@ -6,27 +6,27 @@ import { useState, useEffect } from "react";
 import { firestore, storage } from "@/firebase";
 import { Box, Stack, Modal, Typography, TextField, Button, Grid } from "@mui/material";
 import { collection, doc, getDocs, query, setDoc, deleteDoc, getDoc } from "firebase/firestore";
-// For uploading images:
+/* For uploading images: */
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
 
 export default function Home() {
-  // Inventory Management Helper Functions:
-  // 1. Store Inventory:
+  /* Inventory Management Helper Functions: */
+  /* 1. Store Inventory: */
   const [inventory, setInventory] = useState([]);
-  // 2. State variables for ___ which we will use to add and remove stuff:
+  /* 2. State variables for modal to add items: */
   const [open, setOpen] = useState(false);
-  // 3. Item Names:
+  /* 3. Item Names: */
   const [itemName, setItemName] = useState("");
-  // 4. Search Query:
+  /* 4. Search Query: */
   const [searchQuery, setSearchQuery] = useState("");
-  // 5. Image file and URL:
+  /* 5. Image file and URL: */
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
 
 
 
-  // Fetch Inventory from Firebase:
+  /* Fetch Inventory from Firebase: */
   const updateInventory = async () => {
     const snapshot = query(collection(firestore, "inventory"));
     const docs = await getDocs(snapshot);
@@ -41,91 +41,100 @@ export default function Home() {
     setInventory(inventoryList)
   }
 
-  // Update inventory whenever the page loads:
+  /* Update inventory whenever the page loads: */
   useEffect(() => {
     updateInventory()
   }, [])
 
 
-  // Add an item to the inventory:
-  // Add name, qauntity and image:
-  // const addItem = async (item) => {
-  //   const imageUrl = await uploadImage(item);
-  //   const docRef = doc(collection(firestore, "inventory"), item);
-  //   const docSnap = await getDoc(docRef);
 
-  //   if (docSnap.exists()) {
-  //     const {quantity} = docSnap.data();
-  //     await setDoc(docRef, {quantity: quantity + 1, imageUrl}, {merge: true});
-  //   }
-  //   else {
-  //     await setDoc(docRef, {quantity: 1, imageUrl});
-  //   }
-
-  //   await updateInventory();
-  // }
-
-  const addItem = async (item) => {
+  /* Add an item to the inventory:
+  * Add name, quantity, and image:
+  */
+  const addItem = async (itemName) => {
     let imageUrl = null;
-  
-    // Upload the image if there's an image file
+
+    /* Upload the new image if provided */
     if (imageFile) {
-      imageUrl = await uploadImage(item);
+      imageUrl = await uploadImage(itemName);
     }
-  
-    const docRef = doc(collection(firestore, "inventory"), item);
+
+    const docRef = doc(collection(firestore, "inventory"), itemName);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const { quantity, imageUrl: existingImageUrl } = docSnap.data();
+      /* Use the new imageUrl if provided, otherwise keep the existing one */
+      await setDoc(docRef, { quantity: quantity + 1, imageUrl: imageUrl !== null ? imageUrl : existingImageUrl }, { merge: true });
+    } else {
+      await setDoc(docRef, { quantity: 1, imageUrl });
+    }
+
+    /* Reset imageFile state after use */
+    setImageFile(null);
+
+    await updateInventory();
+  };
+
+
+
+
+
+  /* Increment quantity of an item */
+  const incrementItem = async (itemName) => {
+    const docRef = doc(collection(firestore, "inventory"), itemName);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const { quantity } = docSnap.data();
+      await setDoc(docRef, { quantity: quantity + 1 }, { merge: true });
+    } else {
+      console.error(`Item ${itemName} does not exist in the inventory.`);
+    }
+
+    /* Update the local state to reflect changes */
+    await updateInventory();
+  };
+
+
+
+
+  /* Decrement + Remove an item from the inventory: */
+  const removeItem = async (itemName) => {
+    const docRef = doc(collection(firestore, "inventory"), itemName);
     const docSnap = await getDoc(docRef);
   
     if (docSnap.exists()) {
-      const { quantity } = docSnap.data();
-      await setDoc(docRef, { quantity: quantity + 1, imageUrl }, { merge: true });
-    } else {
-      await setDoc(docRef, { quantity: 1, imageUrl });
+      const { quantity, imageUrl } = docSnap.data();
+      if (quantity === 1) {
+        /* Delete the item document from Firestore */
+        await deleteDoc(docRef);
+        /* Delete the image from Firebase Storage */
+        if (imageUrl) {
+          const storageRef = ref(storage, `inventory_images/${itemName}`);
+          await deleteObject(storageRef);
+        }
+      } else {
+        await setDoc(docRef, { quantity: quantity - 1 }, { merge: true });
+      }
     }
   
     await updateInventory();
   };
   
 
-
-
-  // Remove an item from the inventory:
-  const removeItem = async (item) => {
-    const docRef = doc(collection(firestore, "inventory"), item);
-    const docSnap = await getDoc(docRef);
-
-    if (docSnap.exists()) {
-      /* Retrieve the quantity and imageURL from document data */
-      const {quantity, imageUrl} = docSnap.data();
-      /* If quantity is 1, delete item doc from Firestore
-       * and remove the image from Firebase Storage:
-       */
-      if (quantity === 1) {
-        await deleteDoc(docRef);
-        if (imageUrl) {
-          const storageRef = ref(storage, `inventory_images/${item}`);
-          await deleteObject(storageRef);
-        }
-      }
-      else {
-        await setDoc(docRef, {quantity: quantity - 1}, {merge: true});
-      }
-    }
-
-    await updateInventory();
-  }
-
   
-  // Modal Function:
+  /* Modal Function: */
   const handleOpen = () => {setOpen(true)}
   const handleClose = () => {setOpen(false)}
 
 
-  // Handle search input change:
+
+  /**********  FILTER FUNCTIONALITY  ***********/
+  /* Handle search input change: */
   const handleSearch = (e) => {
     setSearchQuery(e.target.value)
   }
-
 
   /* Filter Inventory: */
   /* If something is searched, display the item
@@ -136,6 +145,8 @@ export default function Home() {
       return item.name.toLowerCase().includes(searchQuery.toLowerCase())
     })
   : inventory;
+  /************************************/
+
 
 
   /******* IMAGE FUNCTIONALITY: *******/
@@ -148,14 +159,16 @@ export default function Home() {
    * Upload image and get URL:
    */
   const uploadImage = async (itemName) => {
-    if (!imageFile) return;
-
+    if (!imageFile) return null;
+  
     const storageRef = ref(storage, `inventory_images/${itemName}`);
     await uploadBytes(storageRef, imageFile);
     const url = await getDownloadURL(storageRef);
-    setImageUrl(url);
     return url;
-  }
+  };
+  /************************************/
+
+  
 
 
   
@@ -165,7 +178,7 @@ export default function Home() {
     <Box
       width="100vw"
       height="100vh"
-      minHeight={"100vh"}
+      minHeight="100vh"
       // bgcolor={"#EDEEEF"}
     >
       <Box 
@@ -280,225 +293,210 @@ export default function Home() {
 
 
 
-
-        <Box
-          display={"flex"}
-          flexDirection={"column"}
+        {/**************  MAIN SCREEN  ***************/}
+        {/* Container for the main screen: */}
+        {/* Main Screen Container */}
+        <Stack
+          display="flex"
+          flexDirection="column"
           justifyContent="center"
-          alignItems={"center"}
-          width={"75%"}
+          alignItems="center"
+          width="100%"
+          maxWidth="100vw"
+          gap={2}
+          spacing={2}  // Set spacing between components
         >
-          {/* Search Bar: */}
-          <TextField
-            variant="outlined"
-            display={"flex"}
-            placeholder="Search items..."
-            value={searchQuery}
-            onChange={handleSearch}
-
-            sx={{
-              position: "absolute",
-              top: "150px",
-              /* Total height of the TextField */
-              '& .MuiOutlinedInput-root': {
-                height: 40,
+          {/* Search Bar */}
+          <Box
+            width="100%"
+            maxWidth="600px"
+          >
+            <TextField
+              variant="outlined"
+              placeholder="Search items..."
+              value={searchQuery}
+              onChange={handleSearch}
+              sx={{
                 width: "100%",
-                marginRight: 10,
-                border: "1px solid #333",
-                borderRadius: 100,
-                '&.Mui-focused fieldset': {
-                  border: "0px solid #333",
+                '& .MuiOutlinedInput-root': {
+                  height: 40,
+                  // width: "100%",
+                  border: "1px solid #333",
+                  borderRadius: 100,
+                  '&.Mui-focused fieldset': {
+                    border: "1px solid #333",
+                  },
+                  '& input': {
+                    padding: '10px 14px',
+                    fontSize: 13,
+                  },
                 },
-                '& input': {
-                  /* Targeting the input element */
-                  padding: '10px 14px',
-                  fontSize: 13,
-                  width: "300px",
-                },
-              },
-            }}
-          />
-        </Box>
+              }}
+            />
+          </Box>
 
-
-
-        {/*****************  Display Inventory: ***************/}
-        {/* Inventory Title: */}
-        <Box
-          width="75%" /* Set the same width as the inventory box */
-          marginTop={3.5}
-          display={"flex"}
-          flexDirection={"row"}
-          justifyContent={"space-between"}
-          gap={"60%"}
-        >
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 600,
-            }}
+          {/* Inventory Title and Add Item Button */}
+          <Box
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            width="75%"
           >
-            Inventory
-          </Typography>
-
-          {/* Adding a new item to the inventory */}
-          <Button
-            variant="outlined"
-            onClick={handleOpen}
-
-            sx={{
-              bgcolor: "#111111",
-              color: "#fff",
-              textTransform: "none",
-              fontSize: "0.75rem",
-              fontWeight: 600,
-              borderColor: "#111111", 
-              borderRadius: 0,
-              height: "30px",
-
-              "&:hover": {
-                bgcolor: "#333",
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 600,
+              }}
+            >
+              Inventory
+            </Typography>
+            <Button
+              variant="outlined"
+              onClick={handleOpen}
+              sx={{
+                bgcolor: "#111111",
                 color: "#fff",
-                borderColor: "#111111", 
-              }
-            }}
-          >
-            Add Item
-          </Button>
-        </Box>
+                textTransform: "none",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                borderColor: "#111111",
+                borderRadius: 0,
+                height: "30px",
+                "&:hover": {
+                  bgcolor: "#333",
+                  color: "#fff",
+                  borderColor: "#111111",
+                }
+              }}
+            >
+              Add Item
+            </Button>
+          </Box>
 
-        {/* Inventory List: */}
-        <Box width="75%">
-          <Grid container rowSpacing={2} columnSpacing={2}>
-            {/* Display Inventory: */}
-            {filteredInventory.map((item) => (
-              <Grid container
-                item key={item.name}
-                lg={3} md={4} sm={6} xs={12}
-                // sx={{
-                //   display: "flex",
-                //   justifyContent: "space-between",
-                // }}
-              >
-                <Box
-                  display={"flex"}
-                  flexDirection={"column"}
-                  // justifyContent="space-between"
-                  // alignItems="center"
-                  padding={2}
-                  border={"3px solid #333"}
-                  sx={{
-                    width: "100%",
-                    // boxSizing: "border-box",
-                  }}
+          {/* Inventory List */}
+          <Box width="75%">
+            <Grid container rowSpacing={2} columnSpacing={2}>
+              {/* Display Inventory */}
+              {filteredInventory.map((item) => (
+                <Grid container
+                  item key={item.name}
+                  lg={3} md={4} sm={6} xs={12}
                 >
-                  {/* Display Image in Inventory: */}
-                  {/* TODO: Uncomment this and fix the image functionality */}
-                  {/* {item.imageUrl && (
-                    <Image
-                      src={item.imageUrl}
-                      alt={item.name}
-                      width={170}
-                      height={150}
-                    />
-                  )} */}
-                  {/* Display Item Name & Quantity in Inventory: */}
                   <Box
-                    display={"flex"}
-                    flexDirection={"column"}
-                    alignItems={"flex-start"}
+                    display="flex"
+                    flexDirection="column"
+                    padding={2}
+                    border="3px solid #333"
+                    sx={{
+                      width: "100%",
+                    }}
                   >
-                    <Typography
-                      sx={{
-                        marginBottom: -1,
-                      }}
+                    {/* Display Image in Inventory */}
+                    {item.imageUrl ? (
+                      <Image
+                        src={item.imageUrl}
+                        alt={item.name}
+                        width={240}
+                        height={200}
+                      />
+                    ) : (
+                      <Box
+                        width={240}
+                        height={200}
+                        display="flex"
+                        justifyContent="center"
+                        alignItems="center"
+                        border="2px dashed #333"
+                      >
+                        <Typography variant="body2" color="textSecondary">
+                          No Image
+                        </Typography>
+                      </Box>
+                    )}
+                    {/* Display Item Name & Quantity in Inventory */}
+                    <Box
+                      display="flex"
+                      flexDirection="column"
+                      alignItems="flex-start"
                     >
-                      {item.name}
-                    </Typography>
-
-                    {/* Quantity: */}
-                    <Typography
-                      sx={{
-                        fontSize: "1.8rem",
-                        fontWeight: 600,
-                      }}
+                      <Typography
+                        sx={{
+                          marginBottom: -1,
+                        }}
+                      >
+                        {item.name}
+                      </Typography>
+                      {/* Quantity */}
+                      <Typography
+                        sx={{
+                          fontSize: "1.8rem",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {item.quantity}
+                      </Typography>
+                    </Box>
+                    {/* Add & Remove Buttons */}
+                    <Stack
+                      display="flex"
+                      flexDirection="row"
+                      gap={1}
+                      justifyContent="center"
+                      alignItems="center"
                     >
-                      {item.quantity}
-                    </Typography>
-                  </Box>
-
-
-                  {/* Add & Remove Buttons: */}
-                  <Stack
-                    display={"flex"}
-                    flexDirection={"row"}
-                    gap={1}
-                    justifyContent={"center"}
-                    alignItems={"center"}
-                  >
-                    {/* Add Button: */}
-                    <Button
-                      variant="outlined"
-                      onClick={() => {
-                        addItem(item.name)
-                      }}
-                      
-                      sx={{
-                        bgcolor: "#DDF353",
-                        color: "#000",
-                        textTransform: "none",
-                        fontSize: "0.75rem",
-                        borderColor: "#111111", 
-                        borderRadius: 0,
-                        height: "40px",
-                        // width: "110px",
-                        minWidth: "115px",
-                        
-                        "&:hover": {
+                      {/* Add Button */}
+                      <Button
+                        variant="outlined"
+                        onClick={() => incrementItem(item.name)}
+                        sx={{
                           bgcolor: "#DDF353",
                           color: "#000",
-                          borderColor: "#fff", 
-                          border: "2px solid",
-                        }
-                      }}
-                    >
-                      Add
-                    </Button>
-
-
-                    {/* Remove Button: */}
-                    <Button
-                      variant="outlined"
-                      onClick={() => {
-                        removeItem(item.name)
-                      }}
-
-                      sx={{
-                        bgcolor: "#111111",
-                        color: "#fff",
-                        textTransform: "none",
-                        fontSize: "0.75rem",
-                        borderColor: "#111111", 
-                        borderRadius: 0,
-                        height: "40px",
-                        // width: "110px",
-                        minWidth: "115px",
-          
-                        "&:hover": {
-                          bgcolor: "#333",
+                          textTransform: "none",
+                          fontSize: "0.75rem",
+                          borderColor: "#111111",
+                          borderRadius: 0,
+                          height: "40px",
+                          minWidth: "115px",
+                          "&:hover": {
+                            bgcolor: "#DDF353",
+                            color: "#000",
+                            borderColor: "#fff",
+                            border: "2px solid",
+                          }
+                        }}
+                      >
+                        Add
+                      </Button>
+                      {/* Remove Button */}
+                      <Button
+                        variant="outlined"
+                        onClick={() => removeItem(item.name)}
+                        sx={{
+                          bgcolor: "#111111",
                           color: "#fff",
-                          borderColor: "#111111", 
-                        }
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </Stack>
-                </Box>
-              </Grid>
-            ))}
-          </Grid>
-        </Box>
+                          textTransform: "none",
+                          fontSize: "0.75rem",
+                          borderColor: "#111111",
+                          borderRadius: 0,
+                          height: "40px",
+                          minWidth: "115px",
+                          "&:hover": {
+                            bgcolor: "#333",
+                            color: "#fff",
+                            borderColor: "#111111",
+                          }
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </Stack>
+                  </Box>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        </Stack>
+
       </Box>
     </Box>
   );
